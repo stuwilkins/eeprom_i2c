@@ -20,127 +20,141 @@
 #include <uCRC16Lib.h>
 #include <eeprom_i2c.h>
 
-EEProm_I2C::EEProm_I2C(uint8_t addr)
+EEPROM_I2C::EEPROM_I2C(uint8_t addr)
 {
   _addr = addr;
 }
 
-bool EEProm_I2C::begin(void)
+int EEPROM_I2C::begin(void)
 {
   Wire.begin();
+  Wire.setClock(400000);
   _chunk = 4;
-  return true;
+  return OK;
 }
 
-bool EEProm_I2C::store(uint16_t offset, uint8_t *data, int size)
+int EEPROM_I2C::writeIfDiff(uint16_t offset, uint8_t *data, int size, bool crc, bool verify)
 {
+  if(size > EEPROM_BUFFER_SIZE)
+  {
+    return BUFFER_ERROR;
+  }
 
- Serial.print(F("Write offset = "));
- Serial.print(offset);
- Serial.print(F(" size = "));
- Serial.println(size);
+  uint8_t _buffer[EEPROM_BUFFER_SIZE];
+  read(offset, _buffer, size, crc);
 
- // Calculate CRC
- uint16_t crc = uCRC16Lib::calculate((char*)data, size); 
- Serial.print(F("crc = "));
- Serial.println(crc, HEX);
+  if(memcmp(_buffer, data, size))
+  {
+    if(verify)
+    {
+      writeAndVerify(offset, data, size, crc);
+    } else {
+      write(offset, data, size, crc);
+    }
+  } else {
+    return NO_WRITE;
+  }
 
- Serial.print(F("Data = "));
- for(int i=size-1;i>=0;i--)
- {
-   Serial.print(data[i], HEX);
- }
-
- Serial.println("");
- write(offset, data, size);
-
- // Write the CRC
- write(offset + size, (uint8_t*)(&crc), sizeof(crc));
-
- return true;
+  return OK;
 }
 
-bool EEProm_I2C::retrieve(uint16_t offset, uint8_t *data, int size)
+int EEPROM_I2C::writeAndVerify(uint16_t offset, uint8_t *data, int size, bool crc)
 {
+  if(size > EEPROM_BUFFER_SIZE)
+  {
+    return BUFFER_ERROR;
+  }
 
- Serial.print(F("Retrieve offset = "));
- Serial.print(offset);
- Serial.print(F(" size = "));
- Serial.println(size);
+  write(offset, data, size, crc);
 
- read(offset, data, size);
+  uint8_t _buffer[EEPROM_BUFFER_SIZE];
+  read(offset, _buffer, size, crc);
 
- Serial.print(F("Data = "));
- for(int i=size-1;i>=0;i--)
- {
-   Serial.print(data[i], HEX);
- }
- Serial.println("");
+  if(memcmp(_buffer, data, size))
+  {
+    return VERIFY_FAILED;
+  }
 
- // Now check CRC
- 
- uint16_t c_crc = uCRC16Lib::calculate((char*)data, size);
- uint16_t s_crc;
- read(offset+size, (uint8_t*)(&s_crc), sizeof(s_crc));
+  return OK;
 
- Serial.print("s_crc = ");
- Serial.println(s_crc, HEX);
- Serial.print("c_crc = ");
- Serial.println(c_crc, HEX);
-
- if(s_crc != c_crc){
-   Serial.println("CRC Mismach");
-   return false;
- }
-
- return true;
 }
 
-bool EEProm_I2C::write(uint16_t offset, uint8_t *data, int size)
+void EEPROM_I2C::_write(uint16_t offset, uint8_t *data, int chunk)
+{
+    Wire.beginTransmission(_addr);
+    Wire.write((int)(offset >> 8));
+    Wire.write((int)(offset & 0xFF));
+
+    for(int j=0;j<chunk;j++)
+    {
+      Wire.write((int)data[j]);
+    }
+    Wire.endTransmission();
+    delay(5);
+}
+
+int EEPROM_I2C::write(uint16_t offset, uint8_t *data, int size, bool crc)
 {
   uint8_t *ptr = data;
   uint16_t _offset = offset;
 
   for(int i = 0;i<size;i+=_chunk){
-    Wire.beginTransmission(_addr);
-    Wire.write((int)(_offset >> 8));
-    Wire.write((int)(_offset & 0xFF));
-
     int _c = (size - i) > _chunk ? _chunk : (size - i);
-    for(int j=0;j<_c;j++)
-    {
-      Wire.write((int)*ptr);
-      ptr++;
-    }
-    Serial.print(Wire.endTransmission());
-    _offset += _chunk;
-    delay(5);
+    _write(_offset, ptr, _c);
+    _offset += _c;
+    ptr += _c;
   }
 
-  return true;
+  if(crc)
+  {
+    uint16_t c_crc = uCRC16Lib::calculate((char*)data, size); 
+    _write(_offset, (uint8_t*)(&c_crc), sizeof(c_crc));
+  }
+
+  return OK;
 }
 
-bool EEProm_I2C::read(uint16_t offset, uint8_t* data, int size)
+void EEPROM_I2C::_read(uint16_t offset, uint8_t* data, int chunk)
 {
-
-  int j = 0;
-  for(int i = 0;i<size;i+=_chunk)
-  {
-    uint16_t _offset = offset + i;
-
     Wire.beginTransmission(_addr);
-    Wire.write(_offset >> 8);
-    Wire.write(_offset & 0xFF);
-    Wire.endTransmission(true);
+    Wire.write(offset >> 8);
+    Wire.write(offset & 0xFF);
+    Wire.endTransmission();
 
-    int _c = (size - i) > _chunk ? _chunk : (size - i);
-    Wire.requestFrom(_addr, _c);
+    Wire.requestFrom(_addr, chunk);
+    
+    int j=0;
     while(Wire.available())
     {
       data[j++] = Wire.read();
-      Serial.println(data[i], HEX);
+    }
+}
+
+int EEPROM_I2C::read(uint16_t offset, uint8_t* data, int size, bool crc)
+{
+
+  uint8_t *data_ptr = data;
+  uint16_t _offset = offset;
+
+  for(int i = 0;i<size;i+=_chunk)
+  {
+    int _c = (size - i) > _chunk ? _chunk : (size - i);
+    _read(_offset, data_ptr, _c);
+    data_ptr += _c;
+    _offset += _c;
+  }
+
+  if(crc)
+  {
+    uint16_t c_crc, r_crc;
+    _read(_offset, (uint8_t*)(&r_crc), sizeof(r_crc));
+    c_crc = uCRC16Lib::calculate((char*)data, size); 
+
+    if(c_crc != r_crc)
+    {
+      return VERIFY_FAILED;
     }
   }
   
-  return true;
+  return OK;
 }

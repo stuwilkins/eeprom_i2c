@@ -19,19 +19,32 @@
 #ifndef __EEPROM_I2C__
 #define __EEPROM_I2C__
 
-class EEProm_I2C
+#ifndef EEPROM_BUFFER_SIZE
+  #define EEPROM_BUFFER_SIZE 256
+#endif 
+
+class EEPROM_I2C
 {
   public:
-    EEProm_I2C(uint8_t addr);
-    bool begin(void);
-    bool store(uint16_t offset, uint8_t *data, int size);
-    bool retrieve(uint16_t offset, uint8_t* data, int size);
-    bool write(uint16_t offset, uint8_t* data, int size);
-    bool read(uint16_t offset, uint8_t* data, int size);
+    EEPROM_I2C(uint8_t addr);
+    int begin(void);
+    int writeIfDiff(uint16_t offset, uint8_t *data, int size, bool crc = false, bool verify = false);
+    int writeAndVerify(uint16_t offset, uint8_t* data, int size, bool crc = false);
+    int write(uint16_t offset, uint8_t* data, int size, bool crc = false);
+    int read(uint16_t offset, uint8_t* data, int size, bool crc = false);
+
+    enum rtn_val {
+      OK = 0,
+      VERIFY_FAILED = 1,
+      BUFFER_ERROR = 2,
+      NO_WRITE = 3
+    };
 
   private:
     uint8_t _addr;
-    uint16_t _chunk = 4;
+    uint16_t _chunk;
+    void _read(uint16_t offset, uint8_t* data, int chunk);
+    void _write(uint16_t offset, uint8_t *data, int chunk);
 };
 
 #endif

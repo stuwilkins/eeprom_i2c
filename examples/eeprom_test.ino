@@ -2,7 +2,7 @@
 #include "eeprom_i2c.h"
 
 // EEPROM
-EEProm_I2C eeprom = EEProm_I2C(0x50);
+EEPROM_I2C eeprom = EEPROM_I2C(0x50);
 
 void setup(void)
 {
@@ -14,15 +14,39 @@ void setup(void)
 
 void loop(void)
 {
-	uint8_t data_out[100];
-	uint8_t data_in[100];
+	uint8_t data_out[200];
+	uint8_t data_in[200];
+	unsigned long a,b;
 
-	data_out[0] = random(0, 255);
-	eeprom.write(1, data_out, 1);
-	eeprom.read(1, data_in, 1);
+	Serial.println("Running tests ......");
 
-	Serial.print("Result = ");
-	Serial.println(data_in[0]);
+	for(int i=0;i<200;i++)
+	{
+		data_out[i] = random(0, 255);
+	}
+
+	a = millis();
+	Serial.println(eeprom.writeIfDiff(0, data_out, 200, 1, 1));
+	b = millis() - a;
+	Serial.println(b);
+
+
+	a = millis();
+	Serial.println(eeprom.read(0, data_in, 200, 1));
+	b = millis() - a;
+	Serial.println(b);
+
+	for(int i=0;i<200;i++)
+	{
+		if(data_in[i] != data_out[i])
+		{
+			Serial.print(F("Error at "));
+			Serial.println(i);
+			break;
+		}
+	}
+
+	Serial.println("Looping ......");
 
 	delay(5000);
 
