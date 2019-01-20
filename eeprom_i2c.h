@@ -29,7 +29,7 @@ class EEPROM_I2C
     EEPROM_I2C(uint8_t addr);
     int begin(void);
     int writeIfDiff(uint16_t offset, uint8_t *data, int size, bool crc = false, bool verify = false);
-    int writeAndVerify(uint16_t offset, uint8_t* data, int size, bool crc = false);
+    int writeAndVerify(uint16_t offset, uint8_t* data, int size, bool crc = false, int retries = 5);
     int write(uint16_t offset, uint8_t* data, int size, bool crc = false);
     int read(uint16_t offset, uint8_t* data, int size, bool crc = false);
 

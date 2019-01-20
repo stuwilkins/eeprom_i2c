@@ -58,24 +58,31 @@ int EEPROM_I2C::writeIfDiff(uint16_t offset, uint8_t *data, int size, bool crc, 
   return OK;
 }
 
-int EEPROM_I2C::writeAndVerify(uint16_t offset, uint8_t *data, int size, bool crc)
+int EEPROM_I2C::writeAndVerify(uint16_t offset, uint8_t *data, int size, bool crc, int retries)
 {
   if(size > EEPROM_BUFFER_SIZE)
   {
     return BUFFER_ERROR;
   }
 
-  write(offset, data, size, crc);
-
-  uint8_t _buffer[EEPROM_BUFFER_SIZE];
-  read(offset, _buffer, size, crc);
-
-  if(memcmp(_buffer, data, size))
+  int ok = retries;
+  while(ok)
   {
-    return VERIFY_FAILED;
+
+    write(offset, data, size, crc);
+
+    uint8_t _buffer[EEPROM_BUFFER_SIZE];
+    read(offset, _buffer, size, crc);
+
+    if(!memcmp(_buffer, data, size))
+    {
+      return OK;
+    }
+
+    ok--;
   }
 
-  return OK;
+  return VERIFY_FAILED;
 
 }
 
